@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-from os import path, makedirs, getenv, rename, listdir, remove, rmdir
+from os import path, makedirs, getenv, rename, listdir, remove, rmdir, getcwd
 from ctypes import windll
 from yt_dlp import YoutubeDL
 from re import match, compile
-from requests import ConnectionError
+from requests import get, ConnectionError
 import flet as ft
 from pathlib import Path
 from typing import Optional, Dict, Tuple
+from subprocess import run, PIPE
+from zipfile import ZipFile
 
 
 class SnapDL:
@@ -19,6 +21,14 @@ class SnapDL:
         self.link_download: str = ""
         self.downloading_type: bool = True
         self.downloading: bool = False
+        self.ffmpeg_dir: Path = Path(getcwd()) / "ffmpeg"
+
+        if self.is_ffmpeg_installed():
+            print("FFmpeg está instalado.")
+        else:
+            print("FFmpeg não está instalado ou não foi encontrado. Baixando...")
+            self.download_ffmpeg()
+            
         self.ffmpeg_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffmpeg.exe"
         self.ffprobe_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffprobe.exe"
         self.default_video_icon: Path = Path(__file__).parent / "assets" / "video.png"
@@ -26,6 +36,44 @@ class SnapDL:
         self.conclude_icon: Path = Path(__file__).parent / "assets" / "check.png"
         self.fail_icon: Path = Path(__file__).parent / "assets" / "error.png"
         ft.app(target=self.main, assets_dir="./assets")
+        
+
+    def is_ffmpeg_installed(self) -> bool:
+        return self.ffmpeg_dir.exists() and (self.ffmpeg_dir / "bin" / "ffmpeg.exe").exists()
+
+    def download_ffmpeg(self) -> None:
+        url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        response = get(url)
+        zip_file_path = "ffmpeg-release-essentials.zip"
+        with open(zip_file_path, "wb") as f:
+            f.write(response.content)
+
+        self.extract_zip(zip_file_path)
+
+        if not self.ffmpeg_dir.exists():
+            makedirs(self.ffmpeg_dir)
+
+        extracted_dir = next(Path(getcwd()).glob("ffmpeg-*-essentials_build"), None)
+        if extracted_dir:
+            for item in extracted_dir.glob("*"):
+                destination = self.ffmpeg_dir / item.name
+                if item.is_dir():
+                    item.rename(destination)
+                else:
+                    item.rename(destination)
+
+            for item in extracted_dir.glob("*"):
+                if item.is_dir():
+                    rmdir(item)
+                else:
+                    remove(item)
+            rmdir(extracted_dir)
+
+        remove(zip_file_path)
+
+    def extract_zip(self, file_path: str) -> None:
+        with ZipFile(file_path, 'r') as zip_ref:
+            zip_ref.extractall(getcwd())
 
     def get_screen_dimensions(self) -> Tuple[int, int]:
         user32 = windll.user32
