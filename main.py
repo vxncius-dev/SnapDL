@@ -9,34 +9,26 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple
 from subprocess import run, PIPE
 from zipfile import ZipFile
+from time import sleep
 
 
 class SnapDL:
     def __init__(self) -> None:
         self.app_name: str = "SnapDL"
-        self.icon: Path = Path(__file__).parent / "assets" / "icon.png"
-        self.icon_window: Path = Path(__file__).parent / "assets" / "icon.ico"
-        self.width: int = 400
-        self.height: int = 60
+        self.icon: Path = Path(__file__).parent / "src" / "assets" / "icon.png"
+        self.icon_window: Path = Path(__file__).parent / "src" / "assets" / "icon.ico"
         self.link_download: str = ""
         self.downloading_type: bool = True
         self.downloading: bool = False
         self.ffmpeg_dir: Path = Path(getcwd()) / "ffmpeg"
-
-        if self.is_ffmpeg_installed():
-            print("FFmpeg está instalado.")
-        else:
-            print("FFmpeg não está instalado ou não foi encontrado. Baixando...")
-            self.download_ffmpeg()
-            
         self.ffmpeg_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffmpeg.exe"
         self.ffprobe_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffprobe.exe"
-        self.default_video_icon: Path = Path(__file__).parent / "assets" / "video.png"
-        self.default_music_icon: Path = Path(__file__).parent / "assets" / "music.png"
-        self.conclude_icon: Path = Path(__file__).parent / "assets" / "check.png"
-        self.fail_icon: Path = Path(__file__).parent / "assets" / "error.png"
+        self.default_video_icon: Path = Path(__file__).parent / "src" / "assets" / "video.png"
+        self.default_music_icon: Path = Path(__file__).parent / "src" / "assets" / "music.png"
+        self.conclude_icon: Path = Path(__file__).parent / "src" / "assets" / "check.png"
+        self.fail_icon: Path = Path(__file__).parent / "src" / "assets" / "error.png"
+        self.screen_width, self.screen_height = self.get_screen_dimensions()
         ft.app(target=self.main, assets_dir="./assets")
-        
 
     def is_ffmpeg_installed(self) -> bool:
         return self.ffmpeg_dir.exists() and (self.ffmpeg_dir / "bin" / "ffmpeg.exe").exists()
@@ -44,11 +36,26 @@ class SnapDL:
     def download_ffmpeg(self) -> None:
         url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
         response = get(url)
-        zip_file_path = "ffmpeg-release-essentials.zip"
-        with open(zip_file_path, "wb") as f:
-            f.write(response.content)
 
+        total_size = int(response.headers.get('content-length', 0))
+        zip_file_path = "ffmpeg-release-essentials.zip"
+
+        with open(zip_file_path, "wb") as f:
+            downloaded_size = 0
+
+            for data in response.iter_content(chunk_size=1024):
+                f.write(data)
+                downloaded_size += len(data)
+
+                if total_size > 0:
+                    self.progress_bar.value = downloaded_size / total_size
+                self.page.update()
+
+        self.download_info_title.text = "Configurando ambiente..."
+        self.progress_bar.value = 1
+        self.progress_bar.color = "#25d366"
         self.extract_zip(zip_file_path)
+        sleep(3)
 
         if not self.ffmpeg_dir.exists():
             makedirs(self.ffmpeg_dir)
@@ -70,6 +77,8 @@ class SnapDL:
             rmdir(extracted_dir)
 
         remove(zip_file_path)
+        self.download_info_title.text = "Tudo pronto"
+        sleep(3)
 
     def extract_zip(self, file_path: str) -> None:
         with ZipFile(file_path, 'r') as zip_ref:
@@ -88,20 +97,26 @@ class SnapDL:
         self.page = page
         page.title = self.app_name
         page.window.icon = self.icon_window
-        page.window.width, page.window.height = self.width, self.height
-        page.window.max_width, page.window.max_height = self.width, self.height
-        screen_width, screen_height = self.get_screen_dimensions()
-        page.window.left = screen_width - self.width - 16
-        page.window.top = screen_height - self.height - 65
         page.window.resizable = False
         page.window.maximizable = False
         page.window.title_bar_hidden = True
         page.window.title_bar_buttons_hidden = True
         page.bgcolor = "#111111"
         page.window.on_close = self.cleanup
-        page.fonts = {"JetBrainsMono": "./fonts/JetBrainsMono-Regular.ttf"}
+        page.fonts = {"JetBrainsMono": "./src/fonts/JetBrainsMono-Regular.ttf"}
         page.theme = ft.Theme(font_family="JetBrainsMono")
 
+        if self.is_ffmpeg_installed():
+            self.show_installed_screen()
+        else:
+            self.show_download_screen()
+
+    def show_installed_screen(self) -> None:
+        self.page.controls.clear()
+        self.page.window.width, self.page.window.height = 400, 60
+        self.page.window.max_width, self.page.window.max_height = 400, 60
+        self.page.window.left = self.screen_width - 400 - 10
+        self.page.window.top = self.screen_height - 60 - 50
         self.video_icon: ft.Image = self.icon_(self.default_video_icon)
         self.music_icon: ft.Image = self.icon_(self.default_music_icon)
         self.video_indicator: ft.Container = ft.Container()
@@ -109,7 +124,7 @@ class SnapDL:
 
         self.search_input: ft.TextField = ft.TextField(
             hint_text="Cole seu link aqui",
-            width=282,
+            width=274,
             height=60,
             text_size=14,
             border=ft.InputBorder.NONE,
@@ -131,8 +146,9 @@ class SnapDL:
             margin=ft.margin.only(left=-8),
             on_click=lambda e: self.cleanup(e),
         )
+        self.page.update()
 
-        page.add(
+        self.page.add(
             ft.WindowDragArea(
                 ft.Container(
                     content=ft.Row(
@@ -154,13 +170,40 @@ class SnapDL:
         )
 
         self.update_buttons()
+        self.page.update()
+
+    def show_download_screen(self) -> None:
+        self.page.controls.clear()
+        self.page.window.width, self.page.window.height = 380, 100
+        self.page.window.max_width, self.page.window.max_height = 380, 100
+        self.page.window.left = (self.screen_width - self.page.window.width) // 2
+        self.page.window.top = (self.screen_height - self.page.window.height) // 2
+
+        self.download_info_title: ft.Text = ft.Text("Baixando FFmpeg, aguarde...", size=16)
+        self.progress_bar: ft.ProgressBar = ft.ProgressBar(value=0, width=340, height=10, border_radius=7, bgcolor="#212121", color="#cccccc")
+
+        self.page.add(
+            ft.Container(
+                content=ft.Column(
+                    [
+                        self.download_info_title,
+                        self.progress_bar
+                    ],
+                    alignment=ft.MainAxisAlignment.CENTER
+                ),
+                expand=True
+            )
+        )
+        self.page.update()
+        self.download_ffmpeg()
+        self.show_installed_screen()
 
     def reset_hint_text(self) -> None:
         self.search_input.hint_text = "Cole seu link aqui"
         self.page.update()
 
     def validate_link(self, link: str, audio: bool) -> None:
-        if not link or self.downloading:
+        if not link or self.downloading or self.link_download == "":
             return
 
         link = link.strip()
@@ -341,3 +384,4 @@ class SnapDL:
 
 if __name__ == "__main__":
     SnapDL()
+    
