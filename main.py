@@ -3,13 +3,14 @@ from os import path, makedirs, getenv, rename, listdir, remove, rmdir, getcwd
 from ctypes import windll
 from yt_dlp import YoutubeDL
 from re import match, compile
-from requests import get, ConnectionError
+from requests import get, exceptions
 import flet as ft
 from pathlib import Path
 from typing import Optional, Dict, Tuple
-from subprocess import run, PIPE
 from zipfile import ZipFile
 from time import sleep
+from shutil import rmtree
+from platform import version
 
 
 class SnapDL:
@@ -21,8 +22,8 @@ class SnapDL:
         self.downloading_type: bool = True
         self.downloading: bool = False
         self.ffmpeg_dir: Path = Path(getcwd()) / "ffmpeg"
-        self.ffmpeg_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffmpeg.exe"
-        self.ffprobe_path: Path = Path(__file__).parent / "ffmpeg" / "bin" / "ffprobe.exe"
+        self.ffmpeg_path: Path = self.ffmpeg_dir / "bin" / "ffmpeg.exe"
+        self.ffprobe_path: Path = self.ffmpeg_dir / "bin" / "ffprobe.exe"
         self.default_video_icon: Path = Path(__file__).parent / "src" / "assets" / "video.png"
         self.default_music_icon: Path = Path(__file__).parent / "src" / "assets" / "music.png"
         self.conclude_icon: Path = Path(__file__).parent / "src" / "assets" / "check.png"
@@ -35,54 +36,71 @@ class SnapDL:
 
     def download_ffmpeg(self) -> None:
         url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-        response = get(url)
-
-        total_size = int(response.headers.get('content-length', 0))
         zip_file_path = "ffmpeg-release-essentials.zip"
-
-        with open(zip_file_path, "wb") as f:
+        
+        try:
+            response = get(url, stream=True, timeout=10)
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
             downloaded_size = 0
+            self.page.update()
 
-            for data in response.iter_content(chunk_size=1024):
-                f.write(data)
-                downloaded_size += len(data)
+            with open(zip_file_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_size > 0:
+                            self.progress_bar.value = downloaded_size / total_size
+                        self.page.update()
+            
+            self.progress_bar.value = 1
+            self.extract_zip(zip_file_path)
+            
+            if not self.ffmpeg_dir.exists():
+                makedirs(self.ffmpeg_dir)
+                
+            extracted_dir = next(Path(getcwd()).glob("ffmpeg-*-essentials_build"), None)
 
-                if total_size > 0:
-                    self.progress_bar.value = downloaded_size / total_size
-                self.page.update()
+            if extracted_dir:
+                for item in extracted_dir.glob("*"):
+                    destination = self.ffmpeg_dir / item.name
+                    if item.is_dir():
+                        item.rename(destination)
+                    else:
+                        item.rename(destination)
 
-        self.download_info_title.text = "Configurando ambiente..."
-        self.progress_bar.value = 1
-        self.progress_bar.color = "#25d366"
-        self.extract_zip(zip_file_path)
-        sleep(3)
+                for item in extracted_dir.glob("*"):
+                    if item.is_dir():
+                        rmtree(item)
+                    else:
+                        remove(item)
+                rmdir(extracted_dir)
 
-        if not self.ffmpeg_dir.exists():
-            makedirs(self.ffmpeg_dir)
+            remove(zip_file_path)
+            return
 
-        extracted_dir = next(Path(getcwd()).glob("ffmpeg-*-essentials_build"), None)
-        if extracted_dir:
-            for item in extracted_dir.glob("*"):
-                destination = self.ffmpeg_dir / item.name
-                if item.is_dir():
-                    item.rename(destination)
-                else:
-                    item.rename(destination)
-
-            for item in extracted_dir.glob("*"):
-                if item.is_dir():
-                    rmdir(item)
-                else:
-                    remove(item)
-            rmdir(extracted_dir)
-
-        remove(zip_file_path)
-        self.download_info_title.text = "Tudo pronto"
-        sleep(3)
+        except exceptions.RequestException as e:
+            self.download_info_title.text = "Erro durante o download"
+            self.progress_bar.color = "red"
+            self.page.update()
+        except OSError as e:
+            self.download_info_title.text = "Erro ao salvar o arquivo"
+            self.progress_bar.color = "red"
+            self.page.update()
+        except Exception as e:
+            self.download_info_title.text = "Erro inesperado"
+            self.progress_bar.color = "red"
+            self.page.update()
 
     def extract_zip(self, file_path: str) -> None:
-        with ZipFile(file_path, 'r') as zip_ref:
-            zip_ref.extractall(getcwd())
+        try:
+            with ZipFile(file_path, 'r') as zip_ref:
+                zip_ref.extractall(getcwd())
+        except Exception as e:
+            self.download_info_title.text = "Erro ao extrair o arquivo"
+            self.progress_bar.color = "red"
+            self.page.update()
 
     def get_screen_dimensions(self) -> Tuple[int, int]:
         user32 = windll.user32
@@ -105,18 +123,15 @@ class SnapDL:
         page.window.on_close = self.cleanup
         page.fonts = {"JetBrainsMono": "./src/fonts/JetBrainsMono-Regular.ttf"}
         page.theme = ft.Theme(font_family="JetBrainsMono")
-
-        if self.is_ffmpeg_installed():
-            self.show_installed_screen()
-        else:
-            self.show_download_screen()
+        self.show_installed_screen() if self.is_ffmpeg_installed() else self.show_download_screen()
 
     def show_installed_screen(self) -> None:
         self.page.controls.clear()
-        self.page.window.width, self.page.window.height = 400, 60
-        self.page.window.max_width, self.page.window.max_height = 400, 60
-        self.page.window.left = self.screen_width - 400 - 10
-        self.page.window.top = self.screen_height - 60 - 50
+        w, h = 400, 60
+        self.page.window.width, self.page.window.height = w, h
+        self.page.window.max_width, self.page.window.max_height = w, h
+        self.page.window.left = self.screen_width - (w + 15)
+        self.page.window.top = self.screen_height - (h + 65)
         self.video_icon: ft.Image = self.icon_(self.default_video_icon)
         self.music_icon: ft.Image = self.icon_(self.default_music_icon)
         self.video_indicator: ft.Container = ft.Container()
@@ -124,7 +139,7 @@ class SnapDL:
 
         self.search_input: ft.TextField = ft.TextField(
             hint_text="Cole seu link aqui",
-            width=274,
+            width=266,
             height=60,
             text_size=14,
             border=ft.InputBorder.NONE,
@@ -143,7 +158,6 @@ class SnapDL:
                 size=20,
                 opacity=.4,
             ),
-            margin=ft.margin.only(left=-8),
             on_click=lambda e: self.cleanup(e),
         )
         self.page.update()
@@ -159,9 +173,19 @@ class SnapDL:
                                 margin=ft.margin.only(top=-8),
                                 height=60,
                             ),
-                            self.video_indicator,
-                            self.music_indicator,
-                            self.close_button,
+                            ft.Container(
+                                content=ft.Row(
+                                    [
+                                        self.video_indicator,
+                                        ft.Container(
+                                            content=self.music_indicator,
+                                            margin=ft.margin.only(right=-4),
+                                        ),
+                                        self.close_button,
+                                    ]
+                                ),
+                                margin=ft.margin.only(left=5),
+                            )
                         ]
                     ),
                 ),
@@ -174,13 +198,14 @@ class SnapDL:
 
     def show_download_screen(self) -> None:
         self.page.controls.clear()
-        self.page.window.width, self.page.window.height = 380, 100
-        self.page.window.max_width, self.page.window.max_height = 380, 100
+        self.page.window.width, self.page.window.height = 380, 80
+        self.page.window.max_width, self.page.window.max_height = 380, 80
         self.page.window.left = (self.screen_width - self.page.window.width) // 2
         self.page.window.top = (self.screen_height - self.page.window.height) // 2
 
         self.download_info_title: ft.Text = ft.Text("Baixando FFmpeg, aguarde...", size=16)
-        self.progress_bar: ft.ProgressBar = ft.ProgressBar(value=0, width=340, height=10, border_radius=7, bgcolor="#212121", color="#cccccc")
+        self.progress_bar: ft.ProgressBar = ft.ProgressBar(value=0, width=340, height=10,
+            border_radius=7, bgcolor="#212121", color="#25d366")
 
         self.page.add(
             ft.Container(
@@ -191,6 +216,7 @@ class SnapDL:
                     ],
                     alignment=ft.MainAxisAlignment.CENTER
                 ),
+                padding=ft.padding.only(left=4),
                 expand=True
             )
         )
@@ -203,7 +229,7 @@ class SnapDL:
         self.page.update()
 
     def validate_link(self, link: str, audio: bool) -> None:
-        if not link or self.downloading or self.link_download == "":
+        if not link or self.downloading:
             return
 
         link = link.strip()
@@ -245,6 +271,9 @@ class SnapDL:
         return Path.home() / "Videos"
 
     def download(self, link: str, audio: Optional[bool] = False) -> None:
+        if not link:
+            return
+    
         if any(service in link for service in ["deezer", "soundcloud", "youtube_music", "apple_music"]):
             audio = True
 
@@ -269,6 +298,11 @@ class SnapDL:
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'aac'}] if audio else [],
             'ffmpeg_location': str(self.ffmpeg_path),
         }
+        
+        if self.screen_height > 1080:
+            best_format = 'bestvideo[height<=?2160]+bestaudio[ext=m4a]/best[height<=?2160]'
+        else:
+            best_format = 'bestvideo[height<=?1080]+bestaudio[ext=m4a]/best[height<=?1080]'
 
         for plataforma, pattern in link_patterns.items():
             if match(pattern, link):
@@ -279,7 +313,7 @@ class SnapDL:
                     self.reset()
                     return
             else:
-                ydl_opts['format'] = 'best' if audio else 'best'
+                ydl_opts['format'] = 'bestaudio[ext=m4a]/best' if audio else best_format
 
         self.downloading = True
         self.downloading_type = not audio
@@ -308,15 +342,10 @@ class SnapDL:
 
             rename(path.join(temp_folder, downloaded_file), final_path)
 
-            if downloaded_file.endswith('.webp'):
-                output_mp4 = final_path.rsplit('.', 1)[0] + '.mp4'
-            elif downloaded_file.endswith('.webm') and audio:
-                output_mp3 = final_path.rsplit('.', 1)[0] + '.mp3'
-
             self.icon_status(True, audio)
             self.toast_info("Download finalizado", "O arquivo foi baixado com sucesso.", final_path, audio)
 
-        except ConnectionError:
+        except exceptions.ConnectionError:
             self.toast_info("Erro de conexão", "Verifique sua internet.")
             self.icon_status(False, audio)
         except FileNotFoundError as e:
@@ -328,7 +357,6 @@ class SnapDL:
         finally:
             self.clear_temp_content()
 
-        from time import sleep
         sleep(4)
         self.reset()
 
@@ -381,7 +409,5 @@ class SnapDL:
 
         toast.show()
 
-
 if __name__ == "__main__":
     SnapDL()
-    
