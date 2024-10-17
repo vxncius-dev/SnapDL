@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-from os import path, makedirs, getenv, rename, listdir, remove, rmdir, getcwd
+from os import path, makedirs, getenv, rename, listdir, remove, rmdir
 from ctypes import windll
 from yt_dlp import YoutubeDL
 from re import match, compile
-from requests import get, exceptions
+from requests import exceptions
 import flet as ft
 from pathlib import Path
 from typing import Optional, Dict, Tuple
-from zipfile import ZipFile
 from time import sleep
-from shutil import rmtree
-from platform import version
 
 
 class SnapDL:
@@ -21,86 +18,14 @@ class SnapDL:
         self.link_download: str = ""
         self.downloading_type: bool = True
         self.downloading: bool = False
-        self.ffmpeg_dir: Path = Path(getcwd()) / "ffmpeg"
-        self.ffmpeg_path: Path = self.ffmpeg_dir / "bin" / "ffmpeg.exe"
-        self.ffprobe_path: Path = self.ffmpeg_dir / "bin" / "ffprobe.exe"
+        self.ffmpeg_path: Path = Path(__file__).parent / "src"  / "ffmpeg" / "bin" / "ffmpeg.exe"
+        self.ffmprobe_path: Path = Path(__file__).parent / "src"  / "ffmpeg" / "bin" / "ffmprobe.exe"
         self.default_video_icon: Path = Path(__file__).parent / "src" / "assets" / "video.png"
         self.default_music_icon: Path = Path(__file__).parent / "src" / "assets" / "music.png"
         self.conclude_icon: Path = Path(__file__).parent / "src" / "assets" / "check.png"
         self.fail_icon: Path = Path(__file__).parent / "src" / "assets" / "error.png"
         self.screen_width, self.screen_height = self.get_screen_dimensions()
         ft.app(target=self.main, assets_dir="./assets")
-
-    def is_ffmpeg_installed(self) -> bool:
-        return self.ffmpeg_dir.exists() and (self.ffmpeg_dir / "bin" / "ffmpeg.exe").exists()
-
-    def download_ffmpeg(self) -> None:
-        url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-        zip_file_path = "ffmpeg-release-essentials.zip"
-        
-        try:
-            response = get(url, stream=True, timeout=10)
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded_size = 0
-            self.page.update()
-
-            with open(zip_file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        if total_size > 0:
-                            self.progress_bar.value = downloaded_size / total_size
-                        self.page.update()
-            
-            self.progress_bar.value = 1
-            self.extract_zip(zip_file_path)
-            
-            if not self.ffmpeg_dir.exists():
-                makedirs(self.ffmpeg_dir)
-                
-            extracted_dir = next(Path(getcwd()).glob("ffmpeg-*-essentials_build"), None)
-
-            if extracted_dir:
-                for item in extracted_dir.glob("*"):
-                    destination = self.ffmpeg_dir / item.name
-                    if item.is_dir():
-                        item.rename(destination)
-                    else:
-                        item.rename(destination)
-
-                for item in extracted_dir.glob("*"):
-                    if item.is_dir():
-                        rmtree(item)
-                    else:
-                        remove(item)
-                rmdir(extracted_dir)
-
-            remove(zip_file_path)
-            return
-
-        except exceptions.RequestException as e:
-            self.download_info_title.text = "Erro durante o download"
-            self.progress_bar.color = "red"
-            self.page.update()
-        except OSError as e:
-            self.download_info_title.text = "Erro ao salvar o arquivo"
-            self.progress_bar.color = "red"
-            self.page.update()
-        except Exception as e:
-            self.download_info_title.text = "Erro inesperado"
-            self.progress_bar.color = "red"
-            self.page.update()
-
-    def extract_zip(self, file_path: str) -> None:
-        try:
-            with ZipFile(file_path, 'r') as zip_ref:
-                zip_ref.extractall(getcwd())
-        except Exception as e:
-            self.download_info_title.text = "Erro ao extrair o arquivo"
-            self.progress_bar.color = "red"
-            self.page.update()
 
     def get_screen_dimensions(self) -> Tuple[int, int]:
         user32 = windll.user32
@@ -123,10 +48,7 @@ class SnapDL:
         page.window.on_close = self.cleanup
         page.fonts = {"JetBrainsMono": "./src/fonts/JetBrainsMono-Regular.ttf"}
         page.theme = ft.Theme(font_family="JetBrainsMono")
-        self.show_installed_screen() if self.is_ffmpeg_installed() else self.show_download_screen()
 
-    def show_installed_screen(self) -> None:
-        self.page.controls.clear()
         w, h = 400, 60
         self.page.window.width, self.page.window.height = w, h
         self.page.window.max_width, self.page.window.max_height = w, h
@@ -195,34 +117,6 @@ class SnapDL:
 
         self.update_buttons()
         self.page.update()
-
-    def show_download_screen(self) -> None:
-        self.page.controls.clear()
-        self.page.window.width, self.page.window.height = 380, 80
-        self.page.window.max_width, self.page.window.max_height = 380, 80
-        self.page.window.left = (self.screen_width - self.page.window.width) // 2
-        self.page.window.top = (self.screen_height - self.page.window.height) // 2
-
-        self.download_info_title: ft.Text = ft.Text("Baixando FFmpeg, aguarde...", size=16)
-        self.progress_bar: ft.ProgressBar = ft.ProgressBar(value=0, width=340, height=10,
-            border_radius=7, bgcolor="#212121", color="#25d366")
-
-        self.page.add(
-            ft.Container(
-                content=ft.Column(
-                    [
-                        self.download_info_title,
-                        self.progress_bar
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER
-                ),
-                padding=ft.padding.only(left=4),
-                expand=True
-            )
-        )
-        self.page.update()
-        self.download_ffmpeg()
-        self.show_installed_screen()
 
     def reset_hint_text(self) -> None:
         self.search_input.hint_text = "Cole seu link aqui"
