@@ -8,7 +8,9 @@ from typing import Optional
 
 notification = Notify()
 app_title = "SnapDL"
-app_icon = pathlib.Path(__file__).parent / "src" / "assets" / "icon.png"
+app_icon = pathlib.Path(__file__).parent / "assets" / "icon.png"
+icon_sucess = pathlib.Path(__file__).parent / "assets" / "sucess.png"
+icon_error = pathlib.Path(__file__).parent / "assets" / "error.png"
 
 
 def send_notification(message):
@@ -77,14 +79,22 @@ def main(page: ft.Page):
                 link,
             ]
 
+        indicator.controls.clear()
         try:
             subprocess.run(command, check=True)
-            send_notification(f"Download completed and saved in folder (Downloads)")
-            download_status.color = ft.Colors.TRANSPARENT
-            download_status.update()
+            indicator.controls.append(final_status(1))
+            indicator.update()
+            send_notification("Download concluído e salvo na pasta Downloads")
 
         except subprocess.CalledProcessError as e:
-            print(f"Erro no download: {e}")
+            send_notification(f"Erro no download: {e}")
+            indicator.controls.append(final_status(0))
+            indicator.update()
+
+        finally:
+            time.sleep(5)
+            indicator.controls.clear()
+            indicator.update()
 
     banner = ft.AlertDialog(
         content=ft.Container(
@@ -134,8 +144,11 @@ def main(page: ft.Page):
         send_notification("Download started")
 
         if validate_link(link):
-            download_status.color = ft.Colors.WHITE
-            download_status.update()
+            indicator.controls.clear()
+            indicator.controls.append(progress)
+            indicator.controls[0].visible = True
+            indicator.controls[0].update()
+            indicator.update()
             download(link, mode)
 
     def show_options(e):
@@ -153,9 +166,19 @@ def main(page: ft.Page):
         width=330,
     )
 
-    download_status = ft.ProgressRing(
-        width=16, height=16, stroke_width=2, color=ft.Colors.TRANSPARENT
+    progress = ft.ProgressRing(
+        width=16, height=16, stroke_width=2, color=ft.Colors.WHITE, visible=False
     )
+
+    def final_status(status):
+        return ft.Image(
+            src=icon_sucess if status else icon_error,
+            width=25,
+            height=25,
+            fit=ft.ImageFit.COVER,
+        )
+
+    indicator = ft.Row([progress])
 
     page.add(
         ft.WindowDragArea(
@@ -166,7 +189,7 @@ def main(page: ft.Page):
                         ft.Container(
                             ft.Row(
                                 [
-                                    download_status,
+                                    indicator,
                                     ft.IconButton(
                                         ft.Icons.CHEVRON_RIGHT,
                                         icon_color=ft.Colors.WHITE,
