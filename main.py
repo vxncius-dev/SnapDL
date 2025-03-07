@@ -9,23 +9,26 @@ from typing import Optional
 notification = Notify()
 app_title = "SnapDL"
 app_icon = pathlib.Path(__file__).parent / "assets" / "icon.png"
+window_icon = pathlib.Path(__file__).parent / "assets" / "icon.ico"
 icon_sucess = pathlib.Path(__file__).parent / "assets" / "sucess.png"
 icon_error = pathlib.Path(__file__).parent / "assets" / "error.png"
 
 
 def send_notification(message):
+    notification._notification_application_name = ""
     notification._notification_icon = app_icon
     notification.title, notification.message = app_title, message
     notification.send()
 
 
 def main(page: ft.Page):
-    page.title, page.window.icon = app_title, app_icon
+    page.title, page.window.icon = app_title, window_icon
     page.padding = 0
     page.bgcolor = ft.Colors.TRANSPARENT
     page.window.width, page.window.max_width = 450, 450
     page.window.height, page.window.max_height = 70, 70
     page.window.maximizable, page.window.frameless = False, True
+    page.window.shadow = True
     page.window.center()
 
     def validate_link(link):
@@ -81,7 +84,12 @@ def main(page: ft.Page):
 
         indicator.controls.clear()
         try:
-            subprocess.run(command, check=True)
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             indicator.controls.append(final_status(1))
             indicator.update()
             send_notification("Download concluído e salvo na pasta Downloads")
@@ -156,14 +164,17 @@ def main(page: ft.Page):
             page.open(banner)
             page.update()
 
-    link_input = ft.TextField(
-        "",
-        hint_text="Paste your link here",
-        border=ft.InputBorder.NONE,
-        max_length=500,
-        selection_color="#222222",
-        on_submit=show_options,
-        width=330,
+    link_input = ft.Container(
+        ft.TextField(
+            "",
+            hint_text="Paste your link here",
+            border=ft.InputBorder.NONE,
+            max_length=500,
+            selection_color="#222222",
+            on_submit=show_options,
+            width=330,
+        ),
+        margin=ft.margin.only(bottom=5),
     )
 
     progress = ft.ProgressRing(
