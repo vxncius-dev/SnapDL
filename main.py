@@ -1,4 +1,4 @@
-# #!/usr/bin/env python3
+#!/usr/bin/env python3
 import flet as ft
 import asyncio, subprocess, pathlib, time, os, sys
 from notifypy import Notify
@@ -15,7 +15,9 @@ icon_error = pathlib.Path(__file__).parent / "assets" / "error.png"
 
 
 def send_notification(message):
-    notification._notification_application_name = ""
+    notification._notification_application_name = (
+        f"{app_title} - Video and Music Downloader"
+    )
     notification._notification_icon = app_icon
     notification.title, notification.message = app_title, message
     notification.send()
@@ -33,7 +35,7 @@ def main(page: ft.Page):
 
     def validate_link(link):
         if not link or len(link) > 500:
-            link_input.hint_text = "Invalid link"
+            link_input.content.hint_text = "Invalid link"
             page.update()
             return False
 
@@ -41,8 +43,8 @@ def main(page: ft.Page):
             r"^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?$"
         )
         if not url_pattern.match(link):
-            link_input.value = ""
-            link_input.hint_text = "Enter a valid link"
+            link_input.content.value = ""
+            link_input.content.hint_text = "Enter a valid link"
             page.update()
             return False
 
@@ -148,7 +150,7 @@ def main(page: ft.Page):
 
     def on_option_select(e):
         mode = e.control.text.lower()
-        link = link_input.value.strip()
+        link = link_input.content.value.strip()
         send_notification("Download started")
 
         if validate_link(link):
@@ -160,7 +162,7 @@ def main(page: ft.Page):
             download(link, mode)
 
     def show_options(e):
-        if validate_link(link_input.value):
+        if validate_link(link_input.content.value):
             page.open(banner)
             page.update()
 
