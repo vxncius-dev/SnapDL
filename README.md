@@ -63,6 +63,6 @@ pip install -r requirements.txt
 3. Start the application:
 
 ```bash
-python snapdl.py
+python main.py
 ```
 SnapDL is now ready to use!
